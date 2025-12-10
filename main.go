@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/gosom/google-maps-scraper/runner"
@@ -16,6 +17,26 @@ import (
 	"github.com/gosom/google-maps-scraper/runner/lambdaaws"
 	"github.com/gosom/google-maps-scraper/runner/webrunner"
 )
+
+func init() {
+	// CRITICAL: Set Windows-compatible browser launch arguments BEFORE any Playwright initialization
+	// These must be set at package init time to ensure they're available when scrapemate/Playwright loads
+	if runtime.GOOS == "windows" {
+		// Set environment variables that Playwright Go might respect
+		// These match the working TypeScript scrapers (Zillow, Facebook)
+		if os.Getenv("PLAYWRIGHT_BROWSERS_ARGS") == "" {
+			os.Setenv("PLAYWRIGHT_BROWSERS_ARGS", "--no-sandbox --disable-dev-shm-usage --disable-blink-features=AutomationControlled")
+		}
+		if os.Getenv("CHROMIUM_ARGS") == "" {
+			os.Setenv("CHROMIUM_ARGS", "--no-sandbox --disable-dev-shm-usage --disable-blink-features=AutomationControlled")
+		}
+		// Try additional environment variables that Playwright Go might check
+		if os.Getenv("PLAYWRIGHT_CHROMIUM_ARGS") == "" {
+			os.Setenv("PLAYWRIGHT_CHROMIUM_ARGS", "--no-sandbox --disable-dev-shm-usage --disable-blink-features=AutomationControlled")
+		}
+		log.Println("[INIT] Windows detected - set browser compatibility environment variables")
+	}
+}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())

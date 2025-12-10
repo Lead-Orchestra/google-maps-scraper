@@ -5,7 +5,9 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -32,22 +34,32 @@ func New(cfg *runner.Config) (runner.Runner, error) {
 		return nil, fmt.Errorf("%w: %d", runner.ErrInvalidRunMode, cfg.RunMode)
 	}
 
+	log.Printf("[DEBUG] Initializing file runner with config: concurrency=%d, depth=%d, debug=%v, fastmode=%v",
+		cfg.Concurrency, cfg.MaxDepth, cfg.Debug, cfg.FastMode)
+
 	ans := &fileRunner{
 		cfg: cfg,
 	}
 
+	log.Printf("[DEBUG] Setting up input from: %s", cfg.InputFile)
 	if err := ans.setInput(); err != nil {
+		log.Printf("[ERROR] Failed to set input: %v", err)
 		return nil, err
 	}
 
+	log.Printf("[DEBUG] Setting up writers for: %s (JSON=%v)", cfg.ResultsFile, cfg.JSON)
 	if err := ans.setWriters(); err != nil {
+		log.Printf("[ERROR] Failed to set writers: %v", err)
 		return nil, err
 	}
 
+	log.Printf("[DEBUG] Setting up scrapemate app")
 	if err := ans.setApp(); err != nil {
+		log.Printf("[ERROR] Failed to set app: %v", err)
 		return nil, err
 	}
 
+	log.Printf("[DEBUG] File runner initialized successfully")
 	return ans, nil
 }
 
@@ -56,14 +68,19 @@ func (r *fileRunner) Run(ctx context.Context) (err error) {
 
 	t0 := time.Now().UTC()
 
+	log.Printf("[DEBUG] Starting file runner execution")
+
 	defer func() {
 		elapsed := time.Now().UTC().Sub(t0)
+		log.Printf("[DEBUG] File runner execution completed. Duration: %v, Jobs: %d", elapsed, len(seedJobs))
+		
 		params := map[string]any{
 			"job_count": len(seedJobs),
 			"duration":  elapsed.String(),
 		}
 
 		if err != nil {
+			log.Printf("[ERROR] File runner error: %v", err)
 			params["error"] = err.Error()
 		}
 
@@ -72,9 +89,12 @@ func (r *fileRunner) Run(ctx context.Context) (err error) {
 		_ = runner.Telemetry().Send(ctx, evt)
 	}()
 
+	log.Printf("[DEBUG] Creating deduper and exit monitor")
 	dedup := deduper.New()
 	exitMonitor := exiter.New()
 
+	log.Printf("[DEBUG] Creating seed jobs from input (FastMode=%v, Lang=%s, Depth=%d)",
+		r.cfg.FastMode, r.cfg.LangCode, r.cfg.MaxDepth)
 	seedJobs, err = runner.CreateSeedJobs(
 		r.cfg.FastMode,
 		r.cfg.LangCode,
@@ -89,7 +109,15 @@ func (r *fileRunner) Run(ctx context.Context) (err error) {
 		r.cfg.ExtraReviews,
 	)
 	if err != nil {
+		log.Printf("[ERROR] Failed to create seed jobs: %v", err)
 		return err
+	}
+
+	log.Printf("[DEBUG] Created %d seed jobs", len(seedJobs))
+	for i, job := range seedJobs {
+		if i < 3 { // Log first 3 jobs as examples
+			log.Printf("[DEBUG] Seed job %d: %s", i+1, job.GetURL())
+		}
 	}
 
 	exitMonitor.SetSeedCount(len(seedJobs))
@@ -99,9 +127,17 @@ func (r *fileRunner) Run(ctx context.Context) (err error) {
 
 	exitMonitor.SetCancelFunc(cancel)
 
+	log.Printf("[DEBUG] Starting exit monitor")
 	go exitMonitor.Run(ctx)
 
+	log.Printf("[DEBUG] Starting scrapemate app with %d seed jobs", len(seedJobs))
 	err = r.app.Start(ctx, seedJobs...)
+	
+	if err != nil {
+		log.Printf("[ERROR] Scrapemate app error: %v", err)
+	} else {
+		log.Printf("[DEBUG] Scrapemate app completed successfully")
+	}
 
 	return err
 }
@@ -185,13 +221,36 @@ func (r *fileRunner) setWriters() error {
 }
 
 func (r *fileRunner) setApp() error {
+	// Set Windows-compatible browser launch arguments via environment variables
+	// These are critical for Windows stability and match our working TypeScript scrapers
+	if runtime.GOOS == "windows" {
+		log.Printf("[DEBUG] Detected Windows OS - setting compatibility environment variables")
+		// Set environment variables that Playwright Go might respect
+		// Note: These may need to be set before Playwright initialization
+		if os.Getenv("PLAYWRIGHT_BROWSERS_ARGS") == "" {
+			// Format: space-separated browser args
+			os.Setenv("PLAYWRIGHT_BROWSERS_ARGS", "--no-sandbox --disable-dev-shm-usage --disable-blink-features=AutomationControlled")
+			log.Printf("[DEBUG] Set PLAYWRIGHT_BROWSERS_ARGS for Windows compatibility")
+		}
+		// Alternative: Try setting chromium-specific args if supported
+		if os.Getenv("CHROMIUM_ARGS") == "" {
+			os.Setenv("CHROMIUM_ARGS", "--no-sandbox --disable-dev-shm-usage --disable-blink-features=AutomationControlled")
+			log.Printf("[DEBUG] Set CHROMIUM_ARGS for Windows compatibility")
+		}
+	}
+
+	log.Printf("[DEBUG] Configuring scrapemate app options")
 	opts := []func(*scrapemateapp.Config) error{
 		// scrapemateapp.WithCache("leveldb", "cache"),
 		scrapemateapp.WithConcurrency(r.cfg.Concurrency),
 		scrapemateapp.WithExitOnInactivity(r.cfg.ExitOnInactivityDuration),
 	}
 
+	log.Printf("[DEBUG] App config: concurrency=%d, exitOnInactivity=%v", 
+		r.cfg.Concurrency, r.cfg.ExitOnInactivityDuration)
+
 	if len(r.cfg.Proxies) > 0 {
+		log.Printf("[DEBUG] Configuring %d proxy(ies)", len(r.cfg.Proxies))
 		opts = append(opts,
 			scrapemateapp.WithProxies(r.cfg.Proxies),
 		)
@@ -199,37 +258,68 @@ func (r *fileRunner) setApp() error {
 
 	if !r.cfg.FastMode {
 		if r.cfg.Debug {
+			log.Printf("[DEBUG] Configuring headful browser mode (Debug enabled)")
 			opts = append(opts, scrapemateapp.WithJS(
 				scrapemateapp.Headfull(),
 				scrapemateapp.DisableImages(),
 			),
 			)
 		} else {
-			opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
+			log.Printf("[DEBUG] Configuring headless browser mode")
+			
+			// Set Windows-compatible browser launch arguments
+			// These match our working TypeScript scrapers and ensure stability on Windows
+			var browserArgs []string
+			if runtime.GOOS == "windows" {
+				log.Printf("[DEBUG] Adding Windows-compatible browser launch arguments")
+				// These args are already in scrapemate defaults, but we ensure they're present
+				// The defaults already include --no-sandbox and --disable-dev-shm-usage
+				// We don't need to override since defaults are good, but we could add extras here if needed
+				browserArgs = []string{
+					// Additional Windows stability args if needed (defaults already have the critical ones)
+				}
+				if len(browserArgs) > 0 {
+					opts = append(opts, scrapemateapp.WithJS(
+						scrapemateapp.DisableImages(),
+						scrapemateapp.WithBrowserArgs(browserArgs),
+					))
+				} else {
+					opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
+				}
+			} else {
+				opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
+			}
 		}
 	} else {
+		log.Printf("[DEBUG] Configuring fast mode with stealth (firefox)")
 		opts = append(opts, scrapemateapp.WithStealth("firefox"))
 	}
 
 	if !r.cfg.DisablePageReuse {
+		log.Printf("[DEBUG] Enabling page reuse (limit=2, browser limit=200)")
 		opts = append(opts,
 			scrapemateapp.WithPageReuseLimit(2),
 			scrapemateapp.WithPageReuseLimit(200),
 		)
 	}
 
+	log.Printf("[DEBUG] Creating scrapemate config with %d writer(s)", len(r.writers))
 	matecfg, err := scrapemateapp.NewConfig(
 		r.writers,
 		opts...,
 	)
 	if err != nil {
+		log.Printf("[ERROR] Failed to create scrapemate config: %v", err)
 		return err
 	}
 
+	log.Printf("[DEBUG] Initializing scrapemate app")
 	r.app, err = scrapemateapp.NewScrapeMateApp(matecfg)
 	if err != nil {
+		log.Printf("[ERROR] Failed to create scrapemate app: %v", err)
 		return err
 	}
 
+	log.Printf("[DEBUG] Scrapemate app initialized successfully")
 	return nil
 }

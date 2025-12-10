@@ -274,4 +274,4 @@ tool (
 	golang.org/x/vuln/cmd/govulncheck
 )
 
-//replace github.com/gosom/scrapemate v0.9.5 => ../scrapemate
+replace github.com/gosom/scrapemate v0.9.6 => ../scrapemate

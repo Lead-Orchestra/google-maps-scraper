@@ -1,0 +1,13 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ 🌍 Google Maps Scraper                                                       ║
+║ ⭐ If you find this project useful, please star it on GitHub: https://github ║
+║ .com/gosom/google-maps-scraper                                               ║
+║ 💖 Consider sponsoring to support development: https://github.com/sponsors/g ║
+║ osom                                                                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+2025/12/10 08:18:32 INFO Downloading browsers...
+2025/12/10 08:18:32 INFO Downloaded browsers successfully
+{"level":"info","component":"scrapemate","time":"2025-12-10T15:18:34.0240581Z","message":"starting scrapemate"}
+{"level":"info","component":"scrapemate","job":"Job{ID: d775b4d0-7e86-4f1d-8a15-1a015d998007, Method: GET, URL: https://www.google.com/maps/search/restaurants+in+New+York, UrlParams: map[hl:en]}","error":"Frame.Goto https://www.google.com/maps/search/restaurants+in+New+York?hl=en: playwright: target closed: Target page, context or browser has been closed","status":"failed","duration":6212.4328,"time":"2025-12-10T15:18:40.2364909Z","message":"job finished"}
+{"level":"error","component":"scrapemate","error":"Frame.Goto https://www.google.com/maps/search/restaurants+in+New+York?hl=en: playwright: target closed: Target page, context or browser has been closed","time":"2025-12-10T15:18:40.2364909Z","message":"error while processing job"}
