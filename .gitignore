@@ -3,3 +3,6 @@ vendor
 bin
 webdata/
 test-results*.csv
+test-output*.csv
+google-maps-scraper
+google-maps-scraper.exe
