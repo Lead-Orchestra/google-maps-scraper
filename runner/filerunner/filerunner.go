@@ -266,29 +266,9 @@ func (r *fileRunner) setApp() error {
 			)
 		} else {
 			log.Printf("[DEBUG] Configuring headless browser mode")
-			
-			// Set Windows-compatible browser launch arguments
-			// These match our working TypeScript scrapers and ensure stability on Windows
-			var browserArgs []string
-			if runtime.GOOS == "windows" {
-				log.Printf("[DEBUG] Adding Windows-compatible browser launch arguments")
-				// These args are already in scrapemate defaults, but we ensure they're present
-				// The defaults already include --no-sandbox and --disable-dev-shm-usage
-				// We don't need to override since defaults are good, but we could add extras here if needed
-				browserArgs = []string{
-					// Additional Windows stability args if needed (defaults already have the critical ones)
-				}
-				if len(browserArgs) > 0 {
-					opts = append(opts, scrapemateapp.WithJS(
-						scrapemateapp.DisableImages(),
-						scrapemateapp.WithBrowserArgs(browserArgs),
-					))
-				} else {
-					opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
-				}
-			} else {
-				opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
-			}
+			// Note: Windows-compatible browser launch arguments are already included in scrapemate defaults
+			// (--no-sandbox, --disable-dev-shm-usage, --disable-blink-features=AutomationControlled)
+			opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
 		}
 	} else {
 		log.Printf("[DEBUG] Configuring fast mode with stealth (firefox)")
