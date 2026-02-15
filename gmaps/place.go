@@ -2,6 +2,7 @@ package gmaps
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -182,16 +183,22 @@ func (j *PlaceJob) extractJSON(page playwright.Page) ([]byte, error) {
 		return nil, err
 	}
 
-	raw, ok := rawI.(string)
-	if !ok {
-		return nil, fmt.Errorf("could not convert to string")
+	switch v := rawI.(type) {
+	case string:
+		const prefix = `)]}'`
+		raw := strings.TrimSpace(strings.TrimPrefix(v, prefix))
+		return []byte(raw), nil
+	case []byte:
+		return v, nil
+	default:
+		// Playwright can return a parsed JS value (array/object). Marshal it into JSON bytes so
+		// EntryFromJSON can handle it consistently.
+		b, mErr := json.Marshal(v)
+		if mErr != nil {
+			return nil, fmt.Errorf("could not convert evaluate result to JSON: %w", mErr)
+		}
+		return b, nil
 	}
-
-	const prefix = `)]}'`
-
-	raw = strings.TrimSpace(strings.TrimPrefix(raw, prefix))
-
-	return []byte(raw), nil
 }
 
 func (j *PlaceJob) getReviewCount(data []byte) int {

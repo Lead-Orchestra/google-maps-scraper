@@ -646,6 +646,12 @@ func getNthElementAndCast[T any](arr []any, indexes ...int) T {
 		return defaultVal
 	}
 
+	// The final index wasn't bounds-checked above (only intermediate indices were).
+	// Google frequently changes/omits fields, so treat out-of-range as "missing".
+	if indexes[0] >= len(arr) {
+		return defaultVal
+	}
+
 	ans, ok := arr[indexes[0]].(T)
 	if !ok {
 		return defaultVal
